@@ -45,6 +45,10 @@ uint16_t *UI_Icons_Pal16 = NULL;
 
 #define UIMenu_FilesLines	(UIMenu_Lines-1)
 
+#ifdef OPENDINGUX
+extern char save_path[PMTMPV];
+#endif
+
 void UIDraw_BG_32(uint32_t *screen, int pitchW, const uint8_t *image, const uint32_t *palette, int width, int height)
 {
 	int x, y;
@@ -605,6 +609,9 @@ void UIMenu_RealTimeMessage(TUIRealtimeCB cb)
 int UIItems_MainMenuC(int index, int reason)
 {
 	char tmp[PMTMPV];
+#ifdef OPENDINGUX
+	char *filename_sep;
+#endif
 
 	// Main Menu
 	if (reason == UIMENU_OK) {
@@ -626,7 +633,13 @@ int UIItems_MainMenuC(int index, int reason)
 				UIMenu_BeginMessage();
 				UIMenu_SetMessage("Loading state...", 1);
 				UIMenu_SetMessage("", 1);
+#ifdef OPENDINGUX
+				filename_sep = strrchr(CommandLine.min_file, '/');
+				filename_sep = filename_sep ? filename_sep + 1 : CommandLine.min_file;
+				sprintf(tmp, "%s/%s.st%d", save_path, filename_sep, UIMenu_Savestate);
+#else
 				sprintf(tmp, "%s.st%d", CommandLine.min_file, UIMenu_Savestate);
+#endif
 				if (PokeMini_LoadSSFile(tmp)) {
 					UIMenu_SetMessage("State loaded!", 0);
 					UIMenu_EndMessage(60);
@@ -639,7 +652,13 @@ int UIItems_MainMenuC(int index, int reason)
 				UIMenu_BeginMessage();
 				UIMenu_SetMessage("Saving state...", 1);
 				UIMenu_SetMessage("", 1);
+#ifdef OPENDINGUX
+				filename_sep = strrchr(CommandLine.min_file, '/');
+				filename_sep = filename_sep ? filename_sep + 1 : CommandLine.min_file;
+				sprintf(tmp, "%s/%s.st%d", save_path, filename_sep, UIMenu_Savestate);
+#else
 				sprintf(tmp, "%s.st%d", CommandLine.min_file, UIMenu_Savestate);
+#endif
 				if (PokeMini_SaveSSFile(tmp, CommandLine.min_file)) {
 					UIMenu_SetMessage("State saved!", 0);
 					UIMenu_EndMessage(60);

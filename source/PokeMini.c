@@ -103,6 +103,10 @@ int (*PokeMini_CustomSaveEEPROM)(const char *filename) = NULL;
 // Number of cycles to process on hardware
 int PokeHWCycles = 0;
 
+#ifdef OPENDINGUX
+extern char save_path[PMTMPV];
+#endif
+
 // Create emulator and all interfaces
 int PokeMini_Create(int flags, int soundfifo)
 {
@@ -488,7 +492,7 @@ int PokeMini_LoadEEPROMFile(const char *filename)
 	// Custom EEPROM load
 	if (PokeMini_CustomLoadEEPROM) {
 		success = PokeMini_CustomLoadEEPROM(filename);
-		PokeMini_OnLoadEEPROMFile(filename, success);
+		if (PokeMini_OnLoadEEPROMFile) PokeMini_OnLoadEEPROMFile(filename, success);
 		return success;
 	}
 
@@ -518,7 +522,7 @@ int PokeMini_SaveEEPROMFile(const char *filename)
 	// Custom EEPROM save
 	if (PokeMini_CustomSaveEEPROM) {
 		success = PokeMini_CustomSaveEEPROM(filename);
-		PokeMini_OnSaveEEPROMFile(filename, success);
+		if (PokeMini_OnSaveEEPROMFile) PokeMini_OnSaveEEPROMFile(filename, success);
 		return success;
 	}
 
@@ -933,6 +937,9 @@ int PokeMini_LoadROM(const char *filename)
 {
 	int colorloaded;
 	char tmp[PMTMPV];
+#ifdef OPENDINGUX
+	char *filename_sep;
+#endif
 
 	// Save Individual EEPROM
 	if (!CommandLine.eeprom_share) {
@@ -976,8 +983,12 @@ int PokeMini_LoadROM(const char *filename)
 
 	// Load Individual EEPROM
 	if (!CommandLine.eeprom_share) {
-#ifdef _TINSPIRE
+#if defined(_TINSPIRE)
 		sprintf(CommandLine.eeprom_file, "%s.eep.tns", CommandLine.min_file);
+#elif defined(OPENDINGUX)
+		filename_sep = strrchr(CommandLine.min_file, '/');
+		filename_sep = filename_sep ? filename_sep + 1 : CommandLine.min_file;
+		sprintf(CommandLine.eeprom_file, "%s/%s.eep", save_path, filename_sep);
 #else
 		sprintf(CommandLine.eeprom_file, "%s.eep", CommandLine.min_file);
 #endif
@@ -998,6 +1009,9 @@ int PokeMini_LoadROM(const char *filename)
 int PokeMini_LoadFromCommandLines(const char *nobios, const char *noeeprom)
 {
 	char tmp[PMTMPV], nomenu = 1;
+#ifdef OPENDINGUX
+	char *filename_sep;
+#endif
 
 	// Load BIOS file
 	PokeMini_LoadFreeBIOS();
@@ -1041,8 +1055,12 @@ int PokeMini_LoadFromCommandLines(const char *nobios, const char *noeeprom)
 		PokeMini_GotoCustomDir(tmp);
 	} else {
 		// Individual EEPROM
-#ifdef _TINSPIRE
+#if defined(_TINSPIRE)
 		sprintf(CommandLine.eeprom_file, "%s.eep.tns", CommandLine.min_file);
+#elif defined(OPENDINGUX)
+		filename_sep = strrchr(CommandLine.min_file, '/');
+		filename_sep = filename_sep ? filename_sep + 1 : CommandLine.min_file;
+		sprintf(CommandLine.eeprom_file, "%s/%s.eep", save_path, filename_sep);
 #else
 		sprintf(CommandLine.eeprom_file, "%s.eep", CommandLine.min_file);
 #endif

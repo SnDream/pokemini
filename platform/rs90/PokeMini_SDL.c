@@ -289,8 +289,9 @@ void menuloop()
 	SDL_EnableKeyRepeat(0, 0);
 }
 
-char home_path[256];
-char conf_path[512];
+char home_path[PMTMPV];
+char save_path[PMTMPV];
+char conf_path[PMTMPV];
 
 // Main function
 int main(int argc, char **argv)
@@ -317,12 +318,18 @@ int main(int argc, char **argv)
 	PokeMini_InitDirs(argv[0], NULL);
 	
 	snprintf(home_path, sizeof(home_path), "%s/.pokemini", getenv("HOME"));
+	snprintf(save_path, sizeof(save_path), "%s/saves", home_path);
 	snprintf(conf_path, sizeof(conf_path), "%s/pokemini.cfg", home_path);
 	if (access( home_path, F_OK ) == -1)
 	{ 
 		mkdir(home_path, 0755);
 	}
 	
+	if (access( save_path, F_OK ) == -1)
+	{ 
+		mkdir(save_path, 0755);
+	}
+
 	CommandLineInit();
 	CommandLineConfFile(conf_path, NULL, NULL);
 	if (!CommandLineArgs(argc, argv, NULL)) {
@@ -348,7 +355,7 @@ int main(int argc, char **argv)
 
 	// Initialize the display
 	
-	rl_screen = SDL_SetVideoMode(width, height, 16, SDL_HWSURFACE | SDL_TRIPLEBUF);
+	rl_screen = SDL_SetVideoMode(width, height, 16, SDL_HWSURFACE);
 	if (rl_screen == NULL) {
 		fprintf(stderr, "Couldn't set video mode: %s\n", SDL_GetError());
 		exit(1);
