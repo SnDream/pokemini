@@ -32,45 +32,89 @@
 #include "Joystick.h"
 
 #include "UI.h"
+#include "Video_x1.h"
 #include "Video_x2.h"
-#include "PokeMini_BG2.h"
+#include "PokeMini_BGrs90.h"
 
 const char *AppName = "PokeMini " PokeMini_Version " Dingux";
-
-static SDL_Rect rct;
 
 // Sound buffer size
 #define SOUNDBUFFER	1024
 #define PMSOUNDBUFF	(SOUNDBUFFER*2)
 
+#define RS90_W		240
+#define RS90_H		160
+#define PM_W		96
+#define PM_H		64
+#define BDR2X_W	((RS90_W - PM_W * 2) / 2)
+#define BDR2X_H	((RS90_H - PM_H * 2) / 2)
+
 static SDL_Surface* rl_screen;
-uint32_t x, y;
-uint32_t *s, *d;
 // --------
 
-/* alekmaul's scaler taken from mame4all */
-static void bitmap_scale(uint32_t startx, uint32_t starty, uint32_t viswidth, uint32_t visheight, uint32_t newwidth, uint32_t newheight,uint32_t pitchsrc,uint32_t pitchdest, uint16_t* __restrict__ src, uint16_t* __restrict__ dst)
-{
-    uint32_t W,H,ix,iy,x,y;
-    x=startx<<16;
-    y=starty<<16;
-    W=newwidth;
-    H=newheight;
-    ix=(viswidth<<16)/W;
-    iy=(visheight<<16)/H;
+inline uint16_t mix_rgb565(uint16_t p1, uint16_t p2) {
+	return ((p1 & 0xF7DE) >> 1) + ((p2 & 0xF7DE) >> 1) + (p1 & p2 & 0x0821);
+}
 
-    do 
-    {
-        uint16_t* __restrict__ buffer_mem=&src[(y>>16)*pitchsrc];
-        W=newwidth; x=startx<<16;
-        do 
-        {
-            *dst++=buffer_mem[x>>16];
-            x+=ix;
-        } while (--W);
-        dst+=pitchdest;
-        y+=iy;
-    } while (--H);
+/* source     target
+ * [p 1|p 2]  [p 1|p 1|m12|p 2|p 2]
+ * [p 3|p 4]  [p 1|p 1|m11|p 2|p 2]
+ *            [m13|m13|all|m24|m24]
+ *            [p 3|p 3|m34|p 4|p 4]
+ *            [p 3|p 3|m34|p 4|p 4]
+ * mab = a mix b, all = p1 mix p2 mix p3 mix p4
+ */
+static void scale_250percent(uint16_t* src, uint16_t* dst)
+{
+	uint16_t* dst1 = dst + RS90_W * 0;
+	uint16_t* dst2 = dst + RS90_W * 1;
+	uint16_t* dst3 = dst + RS90_W * 2;
+	uint16_t p1, p2, p3, p4;
+
+	for (uint16_t y = 0; y < PM_H / 2; y++) {
+		/* dst1: line 1 */
+		/* dst2: line 2 */
+		/* dst3: line 3 */
+		for (uint16_t x = 0; x < PM_W / 2; x++) {
+			p1 = *(src++);
+			p3 = *(src++);
+			p2 = mix_rgb565(p1, p3);
+			*(dst3++) = *(dst2++) = *(dst1++) = p1; /* pix 1 */
+			  dst3++,   *(dst2++) = *(dst1++) = p1; /* pix 2 */
+			*(dst3++) = *(dst2++) = *(dst1++) = p2; /* pix 3 */
+			*(dst3++) = *(dst2++) = *(dst1++) = p3; /* pix 4 */
+			  dst3++,   *(dst2++) = *(dst1++) = p3; /* pix 5 */
+		}
+		dst1  = dst2;
+		dst2  = dst3;
+		dst3 += RS90_W;
+		src  += RS90_W - PM_W;
+		/* dst1: line 3 (mix) */
+		/* dst2: line 4 */
+		/* dst3: line 5 */
+		for (uint16_t x = 0; x < PM_W / 2; x++) {
+			p1 = *(src++);
+			p3 = *(src++);
+			p2 = mix_rgb565(p1, p3);
+			p4 = mix_rgb565(p1, *dst1);
+			*(dst1++) = p4; /* pix 1 */
+			*(dst1++) = p4; /* pix 2 */
+			p4 = mix_rgb565(p2, *dst1);
+			*(dst1++) = p4; /* pix 3 */
+			p4 = mix_rgb565(p3, *dst1);
+			*(dst1++) = p4; /* pix 4 */
+			*(dst1++) = p4; /* pix 5 */
+			*(dst2++) = *(dst3++) = p1; /* pix 1 */
+			*(dst2++) = *(dst3++) = p1; /* pix 2 */
+			*(dst2++) = *(dst3++) = p2; /* pix 3 */
+			*(dst2++) = *(dst3++) = p3; /* pix 4 */
+			*(dst2++) = *(dst3++) = p3; /* pix 5 */
+		}
+		dst1  = dst3;
+		dst2 += RS90_W * 2;
+		dst3 += RS90_W * 2;
+		src  += RS90_W - PM_W;
+	}
 }
 
 // Joystick names and mapping (NEW IN 0.5.0)
@@ -116,7 +160,7 @@ TUIMenu_Item UIItems_Platform[] = {
 
 int UIItems_PlatformC(int index, int reason)
 {
-	UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Fullscreen" : "Unscaled");
+	UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Full(No Filter)" : "Unscaled");
 	
 	if (reason == UIMENU_OK) reason = UIMENU_RIGHT;
 	if (reason == UIMENU_CANCEL) UIMenu_PrevMenu();
@@ -125,7 +169,7 @@ int UIItems_PlatformC(int index, int reason)
 		{
 			case 2:
 				CommandLine.scaling = 0;
-				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Fullscreen" : "Unscaled");
+				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Full(No Filter)" : "Unscaled");
 			break;
 		}
 	}
@@ -134,7 +178,7 @@ int UIItems_PlatformC(int index, int reason)
 		{
 			case 2:
 				CommandLine.scaling = 1;
-				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Fullscreen" : "Unscaled");
+				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Full(No Filter)" : "Unscaled");
 			break;
 			case 3:
 				JoystickEnterMenu();
@@ -227,6 +271,37 @@ void enablesound(int sound)
 	if (AudioEnabled) SDL_PauseAudio(!sound);
 }
 
+static SDL_Surface *rd_screen;
+static SDL_Rect *rumbtop, *rumbbtm;
+static SDL_Rect rumbtop2x = {.x = BDR2X_W, .y = BDR2X_H - 2,        .w = PM_W * 2, .h = 2};
+static SDL_Rect rumbbtm2x = {.x = BDR2X_W, .y = BDR2X_H + PM_H * 2, .w = PM_W * 2, .h = 2};
+static SDL_Rect rumbtop1x = {.x = BDR2X_W, .y = BDR2X_H - 2,        .w = PM_W * 1, .h = 2};
+static SDL_Rect rumbbtm1x = {.x = BDR2X_W, .y = BDR2X_H + PM_H * 1, .w = PM_W * 1, .h = 2};
+
+void Setup_Screen()
+{
+	TPokeMini_VideoSpec* videospec;
+	
+	if (CommandLine.scaling) {
+		/* Full : Blit -> 1x (96x64) screen -> 2.5x (240x160) rl_screen */
+		videospec = (TPokeMini_VideoSpec *) &PokeMini_Video1x1;
+		rd_screen = screen;
+		rumbtop   = &rumbtop1x;
+		rumbbtm   = &rumbbtm1x;
+	} else {
+		/* Unscaled : Blit -> 2x (192x128) rl_screen */
+		videospec = (TPokeMini_VideoSpec *) &PokeMini_Video2x2;
+		rd_screen = rl_screen;
+		rumbtop   = &rumbtop2x;
+		rumbbtm   = &rumbbtm2x;
+	}
+
+	if (!PokeMini_SetVideo(videospec, 16, CommandLine.lcdfilter, CommandLine.lcdmode)) {
+		fprintf(stderr, "Couldn't set video spec\n");
+		exit(1);
+	}
+}
+
 static void Clear_Screen()
 {
 	uint32_t i;
@@ -242,11 +317,6 @@ static void Clear_Screen()
 void menuloop()
 {
 	SDL_Event event;
-	SDL_Rect real_pos;
-	real_pos.x = 0;
-	real_pos.y = 0;
-	real_pos.w = rl_screen->w;
-	real_pos.h = rl_screen->h;
 	
 	// Stop sound
 	SDL_EnableKeyRepeat(SDL_DEFAULT_REPEAT_DELAY, SDL_DEFAULT_REPEAT_INTERVAL);
@@ -266,15 +336,10 @@ void menuloop()
 		UIMenu_Process();
 
 		// Screen rendering
-		//SDL_FillRect(screen, NULL, 0);
-		if (SDL_LockSurface(screen) == 0) {
-			// Render the menu or the game screen
-			UIMenu_Display_16((uint16_t *)screen->pixels + ScOffP, PixPitch);
-			// Unlock surface
-			SDL_UnlockSurface(screen);
-			SDL_SoftStretch(screen, &rct, rl_screen, &real_pos);
-			SDL_Flip(rl_screen);
-		}
+		// Render the menu or the game screen
+		UIMenu_Display_16((uint16_t *)screen->pixels, RS90_W);
+		SDL_BlitSurface(screen, NULL, rl_screen, NULL);
+		SDL_Flip(rl_screen);
 
 		// Handle events
 		while (SDL_PollEvent(&event)) handleevents(&event);
@@ -283,6 +348,7 @@ void menuloop()
 	Clear_Screen();
 
 	// Apply configs
+	Setup_Screen();
 	PokeMini_ApplyChanges();
 	if (UI_Status == UI_STATUS_EXIT) emurunning = 0;
 	else enablesound(CommandLine.sound);
@@ -296,30 +362,19 @@ char conf_path[PMTMPV];
 // Main function
 int main(int argc, char **argv)
 {
-	rct.x = 16;
-	rct.y = 24;
-	rct.w = 192;
-	rct.h = 128;
 	SDL_Joystick *joy;
 	SDL_Event event;
-	SDL_Rect pos;
 
 	// Get native resolution
-	const SDL_Surface* vidSurface = SDL_SetVideoMode(0, 0, 8, SDL_HWSURFACE | SDL_HWPALETTE);
-	uint32_t width = vidSurface->w;
-	uint32_t height = vidSurface->h;
-	printf("Native resolution: %dx%d\n", width, height);
-
-	pos.x = (width-192)/2;
-	pos.y = (height-128)/2;
+	printf("Native resolution: %dx%d\n", RS90_W, RS90_H);
 
 	// Process arguments
 	printf("%s\n\n", AppName);
 	PokeMini_InitDirs(argv[0], NULL);
 	
-	snprintf(home_path, sizeof(home_path), "%s/.pokemini", getenv("HOME"));
-	snprintf(save_path, sizeof(save_path), "%s/saves", home_path);
-	snprintf(conf_path, sizeof(conf_path), "%s/pokemini.cfg", home_path);
+	snprintf(home_path, sizeof(home_path) - 1, "%s/.pokemini", getenv("HOME"));
+	snprintf(save_path, sizeof(save_path) - 1, "%s/saves", home_path);
+	snprintf(conf_path, sizeof(conf_path) - 1, "%s/pokemini.cfg", home_path);
 	if (access( home_path, F_OK ) == -1)
 	{ 
 		mkdir(home_path, 0755);
@@ -331,6 +386,11 @@ int main(int argc, char **argv)
 	}
 
 	CommandLineInit();
+	/* Extra cmdline init for rs90 */
+	CommandLine.lcdmode = 0;	// LCD Mode
+	CommandLine.sound = MINX_AUDIO_EMULATED;
+	CommandLine.synccycles = 8;	// Sync cycles to 8 (Accurate)
+	snprintf(CommandLine.bios_file, sizeof(CommandLine.bios_file) - 1, "%s/bios.min", home_path);
 	CommandLineConfFile(conf_path, NULL, NULL);
 	if (!CommandLineArgs(argc, argv, NULL)) {
 		PrintHelpUsage(stdout);
@@ -346,24 +406,24 @@ int main(int argc, char **argv)
 	joy = SDL_JoystickOpen(0);
 	atexit(SDL_Quit); // Clean up on exit
 
-	// Set video spec and check if is supported
-	if (!PokeMini_SetVideo((TPokeMini_VideoSpec *)&PokeMini_Video2x2, 16, CommandLine.lcdfilter, CommandLine.lcdmode)) {
-		fprintf(stderr, "Couldn't set video spec\n");
-		exit(1);
-	}
-	UIMenu_SetDisplay(192, 128, PokeMini_BGR16, (uint8_t *)PokeMini_BG2, (uint16_t *)PokeMini_BG2_PalBGR16, (uint32_t *)PokeMini_BG2_PalBGR32);
+	// Disable key repeat and hide cursor
+	SDL_EnableKeyRepeat(0, 0);
+	SDL_ShowCursor(SDL_DISABLE);
 
 	// Initialize the display
 	
-	rl_screen = SDL_SetVideoMode(width, height, 16, SDL_HWSURFACE);
+	rl_screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE);
 	if (rl_screen == NULL) {
 		fprintf(stderr, "Couldn't set video mode: %s\n", SDL_GetError());
 		exit(1);
 	}
-	screen = SDL_CreateRGBSurface(SDL_SWSURFACE, width, height, 16, 0,0,0,0);
+	screen = SDL_CreateRGBSurface(SDL_SWSURFACE, RS90_W, RS90_H, 16, 0,0,0,0);
 
-	PixPitch = screen->pitch / 2;
-	ScOffP = (24 * PixPitch) + 16;
+	ScOffP = (BDR2X_H * RS90_W) + BDR2X_W;
+
+	// Set video spec and check if is supported
+	Setup_Screen();
+	UIMenu_SetDisplay(RS90_W, RS90_H, PokeMini_BGR16, (uint8_t *)PokeMini_BGrs90, (uint16_t *)PokeMini_BGrs90_PalBGR16, (uint32_t *)PokeMini_BGrs90_PalBGR32);
 
 	// Initialize the sound
 	SDL_AudioSpec audfmt, outfmt;
@@ -382,10 +442,6 @@ int main(int argc, char **argv)
 	} else {
 		AudioEnabled = 1;
 	}
-
-	// Disable key repeat and hide cursor
-	SDL_EnableKeyRepeat(0, 0);
-	SDL_ShowCursor(SDL_DISABLE);
 
 	// Initialize the emulator
 	printf("Starting emulator...\n");
@@ -410,7 +466,7 @@ int main(int argc, char **argv)
 	enablesound(CommandLine.sound);
 
 	// Emulator's loop
-	unsigned long time, NewTickSync = 0;
+	unsigned long NewTickSync = 0;
 	SDL_FillRect(screen, NULL, 0);
 	while (emurunning) {
 		// Emulate and syncronize
@@ -419,35 +475,28 @@ int main(int argc, char **argv)
 			// Sleep a little in the hope to free a few samples
 			while (MinxAudio_SyncWithAudio()) SDL_Delay(1);
 		} else {
-			time = SDL_GetTicks();
 			PokeMini_EmulateFrame();
-			do {
-				SDL_Delay(1);		// This lower CPU usage
-				time = SDL_GetTicks();
-			} while (time < NewTickSync);
-			NewTickSync = time + 13;	// Aprox 72 times per sec
+			while (SDL_GetTicks() < NewTickSync) SDL_Delay(1);	// This lower CPU usage
+			NewTickSync = SDL_GetTicks() + 13;	// Aprox 72 times per sec
 		}
 
 		// Screen rendering
-		if (SDL_LockSurface(screen) == 0) {
-			// Render the menu or the game screen
+		// Render the menu or the game screen
+		if (LCDDirty || PokeMini_RumblingLatch) {
 			if (PokeMini_Rumbling) {
-				SDL_FillRect(screen, NULL, 0);
-				PokeMini_VideoBlit((uint16_t *)screen->pixels + ScOffP + PokeMini_GenRumbleOffset(PixPitch), PixPitch);
+				SDL_FillRect(rd_screen, rumbtop, 0);
+				SDL_FillRect(rd_screen, rumbbtm, 0);
+				PokeMini_VideoBlit((uint16_t *)rd_screen->pixels + ScOffP + PokeMini_GenRumbleOffset(RS90_W), RS90_W);
 			} else {
-				PokeMini_VideoBlit((uint16_t *)screen->pixels + ScOffP, PixPitch);
+				if (PokeMini_RumblingLatch) {
+					SDL_FillRect(rd_screen, rumbtop, 0);
+					SDL_FillRect(rd_screen, rumbbtm, 0);
+					PokeMini_RumblingLatch = 0;
+				}
+				PokeMini_VideoBlit((uint16_t *)rd_screen->pixels + ScOffP, RS90_W);
 			}
+			if (CommandLine.scaling) scale_250percent((uint16_t*)rd_screen->pixels + ScOffP, (uint16_t*)rl_screen->pixels);
 			LCDDirty = 0;
-			// Unlock surface
-			SDL_UnlockSurface(screen);
-			if (CommandLine.scaling == 1)
-			{
-				bitmap_scale(16, 24, 192, 128, rl_screen->w, rl_screen->h, screen->w, 0, (uint16_t* restrict)screen->pixels, (uint16_t* restrict)rl_screen->pixels);
-			}
-			else
-			{
-				SDL_BlitSurface(screen, &rct, rl_screen, &pos);
-			}
 			SDL_Flip(rl_screen);
 		}
 

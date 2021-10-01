@@ -31,6 +31,7 @@ OBJS = \
  source/Multicart.o	\
  source/Hardware.o	\
  source/Video.o	\
+ source/Video_x1.o	\
  source/Video_x2.o	\
  source/CommandLine.o	\
  source/MinxCPU.o	\
@@ -53,7 +54,7 @@ OBJS = \
  resource/PokeMini_Icons12.o	\
  dependencies/unzip.o	\
  dependencies/ioapi.o	\
- resource/PokeMini_BG2.o
+ resource/PokeMini_BGrs90.o
 
 DEPENDS = \
  sourcex/KeybMapSDL.h	\
@@ -65,6 +66,7 @@ DEPENDS = \
  source/Multicart.h	\
  source/Hardware.h	\
  source/Video.h	\
+ source/Video_x1.h	\
  source/Video_x2.h	\
  source/CommandLine.h	\
  source/MinxCPU.h	\
@@ -81,7 +83,7 @@ DEPENDS = \
  resource/PokeMini_ColorPal.h	\
  resource/PokeMini_Font12.h	\
  resource/PokeMini_Icons12.h	\
- resource/PokeMini_BG2.h	\
+ resource/PokeMini_BGrs90.h	\
  dependencies/minizip/unzip.h	\
  dependencies/minizip/ioapi.h	
  
