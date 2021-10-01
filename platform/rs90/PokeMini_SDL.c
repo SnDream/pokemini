@@ -38,6 +38,25 @@
 
 const char *AppName = "PokeMini " PokeMini_Version " Dingux";
 
+int cfg_scaling = 0;
+int cfg_vsync = 0;
+
+TCommandLineCustom plat_cfg[] = {
+	{
+		.name = "scaling",
+		.ref = &cfg_scaling,
+		.type = COMMANDLINE_INT,
+		.numa = 0,
+		.numb = 1,
+	},	{
+		.name = "vsync",
+		.ref = &cfg_vsync,
+		.type = COMMANDLINE_BOOL,
+	},	{
+		.type = COMMANDLINE_EOL,
+	},
+};
+
 // Sound buffer size
 #define SOUNDBUFFER	1024
 #define PMSOUNDBUFF	(SOUNDBUFFER*2)
@@ -154,13 +173,15 @@ TUIMenu_Item UIItems_Platform[] = {
 	PLATFORMDEF_GOBACK,
 	{ 0,  2, "Scaling...", UIItems_PlatformC },
 	{ 0,  3, "Define Joystick...", UIItems_PlatformC },
+	{ 0,  4, "V-Sync", UIItems_PlatformC },
 	PLATFORMDEF_SAVEOPTIONS,
 	PLATFORMDEF_END(UIItems_PlatformC)
 };
 
 int UIItems_PlatformC(int index, int reason)
 {
-	UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Full(No Filter)" : "Unscaled");
+	UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "Full(No Filter)" : "Unscaled");
+	UIMenu_ChangeItem(UIItems_Platform, 4, "V-Sync: %s", cfg_vsync ? "Yes" : "No");
 	
 	if (reason == UIMENU_OK) reason = UIMENU_RIGHT;
 	if (reason == UIMENU_CANCEL) UIMenu_PrevMenu();
@@ -168,8 +189,12 @@ int UIItems_PlatformC(int index, int reason)
 		switch (index)
 		{
 			case 2:
-				CommandLine.scaling = 0;
-				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Full(No Filter)" : "Unscaled");
+				cfg_scaling = 0;
+				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "Full(No Filter)" : "Unscaled");
+			break;
+			case 4:
+				cfg_vsync = 0;
+				UIMenu_ChangeItem(UIItems_Platform, 4, "V-Sync: %s", cfg_vsync ? "Yes" : "No");
 			break;
 		}
 	}
@@ -177,11 +202,15 @@ int UIItems_PlatformC(int index, int reason)
 		switch (index)
 		{
 			case 2:
-				CommandLine.scaling = 1;
-				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", CommandLine.scaling ? "Full(No Filter)" : "Unscaled");
+				cfg_scaling = 1;
+				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "Full(No Filter)" : "Unscaled");
 			break;
 			case 3:
 				JoystickEnterMenu();
+			break;
+			case 4:
+				cfg_vsync = 1;
+				UIMenu_ChangeItem(UIItems_Platform, 4, "V-Sync: %s", cfg_vsync ? "Yes" : "No");
 			break;
 		}
 	}
@@ -282,7 +311,14 @@ void Setup_Screen()
 {
 	TPokeMini_VideoSpec* videospec;
 	
-	if (CommandLine.scaling) {
+	if (cfg_vsync) rl_screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
+	else           rl_screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE);
+	if (rl_screen == NULL) {
+		fprintf(stderr, "Couldn't set video mode: %s\n", SDL_GetError());
+		exit(1);
+	}
+
+	if (cfg_scaling) {
 		/* Full : Blit -> 1x (96x64) screen -> 2.5x (240x160) rl_screen */
 		videospec = (TPokeMini_VideoSpec *) &PokeMini_Video1x1;
 		rd_screen = screen;
@@ -358,6 +394,7 @@ void menuloop()
 char home_path[PMTMPV];
 char save_path[PMTMPV];
 char conf_path[PMTMPV];
+char plat_path[PMTMPV];
 
 // Main function
 int main(int argc, char **argv)
@@ -375,6 +412,7 @@ int main(int argc, char **argv)
 	snprintf(home_path, sizeof(home_path) - 1, "%s/.pokemini", getenv("HOME"));
 	snprintf(save_path, sizeof(save_path) - 1, "%s/saves", home_path);
 	snprintf(conf_path, sizeof(conf_path) - 1, "%s/pokemini.cfg", home_path);
+	snprintf(plat_path, sizeof(conf_path) - 1, "%s/platform.cfg", home_path);
 	if (access( home_path, F_OK ) == -1)
 	{ 
 		mkdir(home_path, 0755);
@@ -391,8 +429,8 @@ int main(int argc, char **argv)
 	CommandLine.sound = MINX_AUDIO_EMULATED;
 	CommandLine.synccycles = 8;	// Sync cycles to 8 (Accurate)
 	snprintf(CommandLine.bios_file, sizeof(CommandLine.bios_file) - 1, "%s/bios.min", home_path);
-	CommandLineConfFile(conf_path, NULL, NULL);
-	if (!CommandLineArgs(argc, argv, NULL)) {
+	CommandLineConfFile(conf_path, plat_path, &plat_cfg[0]);
+	if (!CommandLineArgs(argc, argv, &plat_cfg[0])) {
 		PrintHelpUsage(stdout);
 		return 1;
 	}
@@ -411,12 +449,6 @@ int main(int argc, char **argv)
 	SDL_ShowCursor(SDL_DISABLE);
 
 	// Initialize the display
-	
-	rl_screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE);
-	if (rl_screen == NULL) {
-		fprintf(stderr, "Couldn't set video mode: %s\n", SDL_GetError());
-		exit(1);
-	}
 	screen = SDL_CreateRGBSurface(SDL_SWSURFACE, RS90_W, RS90_H, 16, 0,0,0,0);
 
 	ScOffP = (BDR2X_H * RS90_W) + BDR2X_W;
@@ -469,17 +501,7 @@ int main(int argc, char **argv)
 	unsigned long NewTickSync = 0;
 	SDL_FillRect(screen, NULL, 0);
 	while (emurunning) {
-		// Emulate and syncronize
-		if (RequireSoundSync) {
-			PokeMini_EmulateFrame();
-			// Sleep a little in the hope to free a few samples
-			while (MinxAudio_SyncWithAudio()) SDL_Delay(1);
-		} else {
-			PokeMini_EmulateFrame();
-			while (SDL_GetTicks() < NewTickSync) SDL_Delay(1);	// This lower CPU usage
-			NewTickSync = SDL_GetTicks() + 13;	// Aprox 72 times per sec
-		}
-
+		PokeMini_EmulateFrame();
 		// Screen rendering
 		// Render the menu or the game screen
 		if (LCDDirty || PokeMini_RumblingLatch) {
@@ -495,9 +517,18 @@ int main(int argc, char **argv)
 				}
 				PokeMini_VideoBlit((uint16_t *)rd_screen->pixels + ScOffP, RS90_W);
 			}
-			if (CommandLine.scaling) scale_250percent((uint16_t*)rd_screen->pixels + ScOffP, (uint16_t*)rl_screen->pixels);
+			if (cfg_scaling) scale_250percent((uint16_t*)rd_screen->pixels + ScOffP, (uint16_t*)rl_screen->pixels);
 			LCDDirty = 0;
 			SDL_Flip(rl_screen);
+		}
+
+		// Emulate and syncronize
+		if (RequireSoundSync) {
+			// Sleep a little in the hope to free a few samples
+			while (MinxAudio_SyncWithAudio()) SDL_Delay(1);
+		} else {
+			while (SDL_GetTicks() < NewTickSync) SDL_Delay(1);	// This lower CPU usage
+			NewTickSync = SDL_GetTicks() + 13;	// Aprox 72 times per sec
 		}
 
 		// Handle events

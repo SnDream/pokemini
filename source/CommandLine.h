@@ -69,7 +69,6 @@ typedef struct {
 	int lcdbright;
 	const char *pokefile;
 	const char *conffile;
-	uint32_t scaling;
 	const TCommandLineCustom *confcustom;
 } TCommandLine;
 
