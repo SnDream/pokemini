@@ -504,19 +504,10 @@ int main(int argc, char **argv)
 		PokeMini_EmulateFrame();
 		// Screen rendering
 		// Render the menu or the game screen
-		if (LCDDirty || PokeMini_RumblingLatch) {
-			if (PokeMini_Rumbling) {
-				SDL_FillRect(rd_screen, rumbtop, 0);
-				SDL_FillRect(rd_screen, rumbbtm, 0);
-				PokeMini_VideoBlit((uint16_t *)rd_screen->pixels + ScOffP + PokeMini_GenRumbleOffset(RS90_W), RS90_W);
-			} else {
-				if (PokeMini_RumblingLatch) {
-					SDL_FillRect(rd_screen, rumbtop, 0);
-					SDL_FillRect(rd_screen, rumbbtm, 0);
-					PokeMini_RumblingLatch = 0;
-				}
-				PokeMini_VideoBlit((uint16_t *)rd_screen->pixels + ScOffP, RS90_W);
-			}
+		if (LCDDirty || PokeMini_Rumbling) {
+			SDL_FillRect(rd_screen, rumbtop, 0);
+			SDL_FillRect(rd_screen, rumbbtm, 0);
+			PokeMini_VideoBlit((uint16_t *)rd_screen->pixels + ScOffP + (PokeMini_Rumbling ? PokeMini_GenRumbleOffset(RS90_W) : 0), RS90_W);
 			if (cfg_scaling) scale_250percent((uint16_t*)rd_screen->pixels + ScOffP, (uint16_t*)rl_screen->pixels);
 			LCDDirty = 0;
 			SDL_Flip(rl_screen);
