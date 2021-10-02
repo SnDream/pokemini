@@ -68,7 +68,9 @@ TCommandLineCustom plat_cfg[] = {
 #define BDR2X_W	((RS90_W - PM_W * 2) / 2)
 #define BDR2X_H	((RS90_H - PM_H * 2) / 2)
 
-static SDL_Surface* rl_screen;
+#define ScOffP	((BDR2X_H * RS90_W) + BDR2X_W)
+
+static SDL_Surface *screen, *sketch, *scrdst;
 // --------
 
 inline uint16_t mix_rgb565(uint16_t p1, uint16_t p2) {
@@ -218,10 +220,8 @@ int UIItems_PlatformC(int index, int reason)
 }
 
 
-// For the emulator loop and video
+// For the emulator loop
 int emurunning = 1;
-SDL_Surface *screen;
-int PixPitch, ScOffP;
 
 // Handle keyboard and quit events
 void handleevents(SDL_Event *event)
@@ -300,7 +300,6 @@ void enablesound(int sound)
 	if (AudioEnabled) SDL_PauseAudio(!sound);
 }
 
-static SDL_Surface *rd_screen;
 static SDL_Rect *rumbtop, *rumbbtm;
 static SDL_Rect rumbtop2x = {.x = BDR2X_W, .y = BDR2X_H - 2,        .w = PM_W * 2, .h = 2};
 static SDL_Rect rumbbtm2x = {.x = BDR2X_W, .y = BDR2X_H + PM_H * 2, .w = PM_W * 2, .h = 2};
@@ -311,23 +310,22 @@ void Setup_Screen()
 {
 	TPokeMini_VideoSpec* videospec;
 	
-	if (cfg_vsync) rl_screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
-	else           rl_screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE);
-	if (rl_screen == NULL) {
+	screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE | (cfg_vsync ? SDL_DOUBLEBUF : 0));
+	if (screen == NULL) {
 		fprintf(stderr, "Couldn't set video mode: %s\n", SDL_GetError());
 		exit(1);
 	}
 
 	if (cfg_scaling) {
-		/* Full : Blit -> 1x (96x64) screen -> 2.5x (240x160) rl_screen */
+		/* Full : Blit -> 1x (96x64) sketch -> 2.5x (240x160) screen */
 		videospec = (TPokeMini_VideoSpec *) &PokeMini_Video1x1;
-		rd_screen = screen;
+		scrdst    = sketch;
 		rumbtop   = &rumbtop1x;
 		rumbbtm   = &rumbbtm1x;
 	} else {
-		/* Unscaled : Blit -> 2x (192x128) rl_screen */
+		/* Unscaled : Blit -> 2x (192x128) screen */
 		videospec = (TPokeMini_VideoSpec *) &PokeMini_Video2x2;
-		rd_screen = rl_screen;
+		scrdst    = screen;
 		rumbtop   = &rumbtop2x;
 		rumbbtm   = &rumbbtm2x;
 	}
@@ -344,8 +342,8 @@ static void Clear_Screen()
 	for(i=0;i<3;i++)
 	{
 		SDL_FillRect(screen, NULL, 0);
-		SDL_FillRect(rl_screen, NULL, 0);
-		SDL_Flip(rl_screen);
+		SDL_FillRect(sketch, NULL, 0);
+		SDL_Flip(screen);
 	}
 }
 
@@ -373,9 +371,9 @@ void menuloop()
 
 		// Screen rendering
 		// Render the menu or the game screen
-		UIMenu_Display_16((uint16_t *)screen->pixels, RS90_W);
-		SDL_BlitSurface(screen, NULL, rl_screen, NULL);
-		SDL_Flip(rl_screen);
+		UIMenu_Display_16((uint16_t *)sketch->pixels, RS90_W);
+		SDL_BlitSurface(sketch, NULL, screen, NULL);
+		SDL_Flip(screen);
 
 		// Handle events
 		while (SDL_PollEvent(&event)) handleevents(&event);
@@ -449,9 +447,7 @@ int main(int argc, char **argv)
 	SDL_ShowCursor(SDL_DISABLE);
 
 	// Initialize the display
-	screen = SDL_CreateRGBSurface(SDL_SWSURFACE, RS90_W, RS90_H, 16, 0,0,0,0);
-
-	ScOffP = (BDR2X_H * RS90_W) + BDR2X_W;
+	sketch = SDL_CreateRGBSurface(SDL_SWSURFACE, RS90_W, RS90_H, 16, 0,0,0,0);
 
 	// Set video spec and check if is supported
 	Setup_Screen();
@@ -499,18 +495,18 @@ int main(int argc, char **argv)
 
 	// Emulator's loop
 	unsigned long NewTickSync = 0;
-	SDL_FillRect(screen, NULL, 0);
+	SDL_FillRect(sketch, NULL, 0);
 	while (emurunning) {
 		PokeMini_EmulateFrame();
 		// Screen rendering
 		// Render the menu or the game screen
 		if (LCDDirty || PokeMini_Rumbling) {
-			SDL_FillRect(rd_screen, rumbtop, 0);
-			SDL_FillRect(rd_screen, rumbbtm, 0);
-			PokeMini_VideoBlit((uint16_t *)rd_screen->pixels + ScOffP + (PokeMini_Rumbling ? PokeMini_GenRumbleOffset(RS90_W) : 0), RS90_W);
-			if (cfg_scaling) scale_250percent((uint16_t*)rd_screen->pixels + ScOffP, (uint16_t*)rl_screen->pixels);
+			SDL_FillRect(scrdst, rumbtop, 0);
+			SDL_FillRect(scrdst, rumbbtm, 0);
+			PokeMini_VideoBlit((uint16_t *)scrdst->pixels + ScOffP + (PokeMini_Rumbling ? PokeMini_GenRumbleOffset(RS90_W) : 0), RS90_W);
+			if (cfg_scaling) scale_250percent((uint16_t*)scrdst->pixels + ScOffP, (uint16_t*)screen->pixels);
 			LCDDirty = 0;
-			SDL_Flip(rl_screen);
+			SDL_Flip(screen);
 		}
 
 		// Emulate and syncronize
@@ -533,7 +529,7 @@ int main(int argc, char **argv)
 	enablesound(0);
 	UIMenu_Destroy();
 	
-	if (rl_screen) SDL_FreeSurface(rl_screen);
+	if (sketch) SDL_FreeSurface(sketch);
 	if (screen) SDL_FreeSurface(screen);
 	
 	// Save Stuff
