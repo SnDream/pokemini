@@ -4,6 +4,7 @@ mkdir -p opk
 cp ./PokeMini opk/PokeMini
 cp ../../resource/pokemini.png opk/icon.png
 cp ../../LICENSE opk/COPYING
+cp ./readme.txt opk/readme.txt
 
 # https://unix.stackexchange.com/questions/219268/how-to-add-new-lines-when-using-echo
 print()
@@ -18,7 +19,7 @@ esac
 
 print '[Desktop Entry]
 Type=Application
-Name=PokeMini
+Name=PokeMini+
 Comment=Pokemon Mini emulator
 Exec=PokeMini %f
 Icon=icon
@@ -26,6 +27,7 @@ Terminal=false
 Type=Application
 selectorfilter=.min
 Categories=emulators;
+X-OD-Manual=readme.txt
 X-OD-NeedsDownscaling=false' > opk/default.rs90.desktop
 
 mksquashfs ./opk pokemini_rs90.opk -all-root -noappend -no-exports -no-xattrs

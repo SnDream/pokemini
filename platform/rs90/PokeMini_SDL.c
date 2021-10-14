@@ -39,7 +39,7 @@
 const char *AppName = "PokeMini " PokeMini_Version " Dingux";
 
 int cfg_scaling = 0;
-int cfg_vsync = 0;
+int cfg_vsync = 1;
 
 TCommandLineCustom plat_cfg[] = {
 	{
@@ -182,7 +182,7 @@ TUIMenu_Item UIItems_Platform[] = {
 
 int UIItems_PlatformC(int index, int reason)
 {
-	UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "Full(No Filter)" : "Unscaled");
+	UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "2.5x (No Filter)" : "2x");
 	UIMenu_ChangeItem(UIItems_Platform, 4, "V-Sync: %s", cfg_vsync ? "Yes" : "No");
 	
 	if (reason == UIMENU_OK) reason = UIMENU_RIGHT;
@@ -192,7 +192,7 @@ int UIItems_PlatformC(int index, int reason)
 		{
 			case 2:
 				cfg_scaling = 0;
-				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "Full(No Filter)" : "Unscaled");
+				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "2.5x (No Filter)" : "2x");
 			break;
 			case 4:
 				cfg_vsync = 0;
@@ -205,7 +205,7 @@ int UIItems_PlatformC(int index, int reason)
 		{
 			case 2:
 				cfg_scaling = 1;
-				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "Full(No Filter)" : "Unscaled");
+				UIMenu_ChangeItem(UIItems_Platform, 2, "Scaling: %s", cfg_scaling ? "2.5x (No Filter)" : "2x");
 			break;
 			case 3:
 				JoystickEnterMenu();
@@ -310,20 +310,20 @@ void Setup_Screen()
 {
 	TPokeMini_VideoSpec* videospec;
 	
-	screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE | (cfg_vsync ? SDL_DOUBLEBUF : 0));
+	screen = SDL_SetVideoMode(RS90_W, RS90_H, 16, SDL_HWSURFACE | (cfg_vsync ? SDL_TRIPLEBUF : 0));
 	if (screen == NULL) {
 		fprintf(stderr, "Couldn't set video mode: %s\n", SDL_GetError());
 		exit(1);
 	}
 
 	if (cfg_scaling) {
-		/* Full : Blit -> 1x (96x64) sketch -> 2.5x (240x160) screen */
+		/* 2.5x : Blit -> 1x (96x64) sketch -> 2.5x (240x160) screen */
 		videospec = (TPokeMini_VideoSpec *) &PokeMini_Video1x1;
 		scrdst    = sketch;
 		rumbtop   = &rumbtop1x;
 		rumbbtm   = &rumbbtm1x;
 	} else {
-		/* Unscaled : Blit -> 2x (192x128) screen */
+		/* 2x : Blit -> 2x (192x128) screen */
 		videospec = (TPokeMini_VideoSpec *) &PokeMini_Video2x2;
 		scrdst    = screen;
 		rumbtop   = &rumbtop2x;
@@ -409,8 +409,8 @@ int main(int argc, char **argv)
 	
 	snprintf(home_path, sizeof(home_path) - 1, "%s/.pokemini", getenv("HOME"));
 	snprintf(save_path, sizeof(save_path) - 1, "%s/saves", home_path);
-	snprintf(conf_path, sizeof(conf_path) - 1, "%s/pokemini.cfg", home_path);
-	snprintf(plat_path, sizeof(conf_path) - 1, "%s/platform.cfg", home_path);
+	snprintf(conf_path, sizeof(conf_path) - 1, "%s/pokemini_rs90.cfg", home_path);
+	snprintf(plat_path, sizeof(plat_path) - 1, "%s/platform_rs90.cfg", home_path);
 	if (access( home_path, F_OK ) == -1)
 	{ 
 		mkdir(home_path, 0755);
@@ -494,13 +494,15 @@ int main(int argc, char **argv)
 	enablesound(CommandLine.sound);
 
 	// Emulator's loop
-	unsigned long NewTickSync = 0;
+	int DropCount = 5;
+	unsigned long NewTickSync = 0, CurrentTick = 0;
 	SDL_FillRect(sketch, NULL, 0);
 	while (emurunning) {
 		PokeMini_EmulateFrame();
 		// Screen rendering
 		// Render the menu or the game screen
-		if (LCDDirty || PokeMini_Rumbling) {
+		if (cfg_vsync && !(--DropCount)) DropCount = 5; /* Drop 1 frame for every continuous 5 frames (75hz -> 60hz) */
+		else if (LCDDirty || PokeMini_Rumbling) {
 			SDL_FillRect(scrdst, rumbtop, 0);
 			SDL_FillRect(scrdst, rumbbtm, 0);
 			PokeMini_VideoBlit((uint16_t *)scrdst->pixels + ScOffP + (PokeMini_Rumbling ? PokeMini_GenRumbleOffset(RS90_W) : 0), RS90_W);
@@ -514,8 +516,9 @@ int main(int argc, char **argv)
 			// Sleep a little in the hope to free a few samples
 			while (MinxAudio_SyncWithAudio()) SDL_Delay(1);
 		} else {
-			while (SDL_GetTicks() < NewTickSync) SDL_Delay(1);	// This lower CPU usage
-			NewTickSync = SDL_GetTicks() + 13;	// Aprox 72 times per sec
+			while ((CurrentTick = SDL_GetTicks()) < NewTickSync) SDL_Delay(1);	// This lower CPU usage
+			if (NewTickSync + 14 * 4 < CurrentTick) NewTickSync = CurrentTick;
+			else NewTickSync = NewTickSync + 14;	// Aprox 72 times per sec
 		}
 
 		// Handle events

@@ -8,10 +8,10 @@ BUILD = Build
 TARGET = PokeMini
 PROFILE = 0
 
-FLAGS_OPT = -Ofast -fdata-sections -ffunction-sections -mno-fp-exceptions -mno-check-zero-division -mframe-header-opt -fno-common -flto -fwhole-program -fsingle-precision-constant -mips32 -fno-PIC -mno-abicalls
+FLAGS_OPT = -Ofast -fdata-sections -ffunction-sections -mno-fp-exceptions -mno-check-zero-division -mframe-header-opt -fno-common -flto -fwhole-program -fsingle-precision-constant -mips32 -fno-PIC -fno-stack-protector -fomit-frame-pointer -falign-functions=1 -falign-jumps=1 -falign-loops=1
 
 CFLAGS	= $(FLAGS_OPT) -Wall $(INCLUDE) -DPERFORMANCE -DOPENDINGUX
-SLFLAGS = -nodefaultlibs -lc -lgcc -lm -lSDL -lasound -lz -no-pie -Wl,--as-needed -Wl,--gc-sections -s -flto
+SLFLAGS = -lc -lgcc -lm -lSDL -lasound -lz -no-pie -Wl,--as-needed -Wl,--gc-sections -s -flto
 
 ifeq ($(PROFILE), YES)
 CFLAGS 		+= -fprofile-generate="/media/QEMU VVFAT"
