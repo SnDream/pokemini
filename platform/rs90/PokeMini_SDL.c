@@ -503,11 +503,11 @@ int main(int argc, char **argv)
 		// Render the menu or the game screen
 		if (cfg_vsync && !(--DropCount)) DropCount = 5; /* Drop 1 frame for every continuous 5 frames (75hz -> 60hz) */
 		else if (LCDDirty || PokeMini_Rumbling) {
+			if (LCDDirty) LCDDirty--;
 			SDL_FillRect(scrdst, rumbtop, 0);
 			SDL_FillRect(scrdst, rumbbtm, 0);
 			PokeMini_VideoBlit((uint16_t *)scrdst->pixels + ScOffP + (PokeMini_Rumbling ? PokeMini_GenRumbleOffset(RS90_W) : 0), RS90_W);
 			if (cfg_scaling) scale_250percent((uint16_t*)scrdst->pixels + ScOffP, (uint16_t*)screen->pixels);
-			LCDDirty = 0;
 			SDL_Flip(screen);
 		}
 
